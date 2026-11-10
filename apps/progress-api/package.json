@@ -1,0 +1,1 @@
+{"name":"progress-api","private":true,"version":"0.1.0","type":"module","scripts":{"dev":"tsx watch src/index.ts","build":"tsc -b","typecheck":"tsc -b --pretty false"},"dependencies":{"pg":"^8.16.3","zod":"^4.1.12"},"devDependencies":{"@types/node":"^24.19.2","@types/pg":"^8.15.5","tsx":"^4.20.6","typescript":"~7.0.2"}}

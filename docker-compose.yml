@@ -1,0 +1,109 @@
+name: city-property-game
+
+services:
+  game-web:
+    build:
+      context: .
+      dockerfile: deploy/game-web.Dockerfile
+    restart: unless-stopped
+    networks:
+      - app-internal
+
+  progress-web:
+    build:
+      context: .
+      dockerfile: deploy/progress-web.Dockerfile
+    restart: unless-stopped
+    networks:
+      - app-internal
+
+  game-server:
+    build:
+      context: .
+      dockerfile: deploy/game-server.Dockerfile
+    environment:
+      PORT: "3001"
+      GAME_WEB_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost}
+    expose:
+      - "3001"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - app-internal
+
+  progress-api:
+    build:
+      context: .
+      dockerfile: deploy/progress-api.Dockerfile
+    environment:
+      NODE_ENV: production
+      PORT: "3002"
+      DATABASE_URL: postgres://${POSTGRES_USER:-citygame}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-citygame}
+    expose:
+      - "3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - app-internal
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-citygame}
+      POSTGRES_USER: ${POSTGRES_USER:-citygame}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - app-internal
+
+  nginx:
+    image: nginx:1.27-alpine
+    ports:
+      - "${HTTP_PORT:-80}:80"
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      game-web:
+        condition: service_started
+      progress-web:
+        condition: service_started
+      game-server:
+        condition: service_healthy
+      progress-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://127.0.0.1/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - app-internal
+
+networks:
+  app-internal:
+    driver: bridge
+
+volumes:
+  postgres-data:
